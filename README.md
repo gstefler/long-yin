@@ -107,3 +107,26 @@ Cache-Control: public, max-age=31536000, immutable
 X-Cache-Status: HIT
 X-Cache-Filename: %E9%BA%A6%E5%BD%93%E5%8A%B3_c48cda3051f8.mp3
 ```
+
+---
+
+## ⚙️ Configuration & Cache Eviction
+
+The service maintains a self-cleaning local cache directory. Eviction runs **asynchronously in the background** when a new file is saved, ensuring zero request latency overhead.
+
+### Environment Variables
+
+You can configure the service using the following environment variables (which can be mapped in `docker-compose.yml` or passed directly to Bun):
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `PORT` | The network port the server listens on. | `3000` |
+| `NODE_ENV` | Environment mode (`development` or `production`). In `development` mode, requests to `/api/tts` print beautified telemetry JSON logs to the console. | `development` |
+| `MAX_CACHE_SIZE_MB` | The absolute maximum size limit for the local cache directory before triggering eviction. | `500` |
+| `TARGET_CACHE_SIZE_MB` | The target size the cache folder is shrunk to during eviction. | `350` |
+
+### Cache Eviction Mechanism (LRU)
+1. When a cache `MISS` occurs and a new MP3 is saved, the service checks the folder size.
+2. If the folder size exceeds `MAX_CACHE_SIZE_MB`, files are sorted by their modification time (`mtime`), oldest first.
+3. Files are deleted one by one until the total cache directory size falls below `TARGET_CACHE_SIZE_MB`.
+
