@@ -1,0 +1,15 @@
+{
+  "name": "chinese-tts",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "edge-tts-universal": "^1.4.0",
+    "hono": "^4.12.25"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.9.3"
+  }
+}

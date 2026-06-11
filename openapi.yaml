@@ -1,0 +1,298 @@
+openapi: 3.0.3
+info:
+  title: Chinese Neural TTS API
+  description: >
+    A lightweight, high-performance Chinese Text-to-Speech (TTS) microservice.
+    It synthesizes natural Mandarin, Cantonese, and Taiwanese speech using Microsoft Edge Neural TTS,
+    caching the synthesized audio files locally and client-side for ultra-low latency.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+paths:
+  /health:
+    get:
+      summary: Get service health and cache statistics
+      description: Returns the health status of the API, server uptime, and statistics regarding the local audio cache.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: '2026-06-11T15:04:23.321Z'
+                  uptime:
+                    type: number
+                    description: Server uptime in seconds
+                    example: 13.007
+                  cache:
+                    type: object
+                    properties:
+                      directory:
+                        type: string
+                        example: /app/audio-cache
+                      fileCount:
+                        type: integer
+                        description: Total number of cached audio files
+                        example: 18
+                      sizeBytes:
+                        type: integer
+                        description: Cumulative size of cached files in bytes
+                        example: 464256
+                      sizeKB:
+                        type: integer
+                        description: Cumulative size of cached files in kilobytes
+                        example: 453
+
+  /api/voices:
+    get:
+      summary: List available standard Chinese neural voice profiles
+      description: Returns a list of active Mainland Chinese voice profiles, including metadata and an A1 level pre-configured audio demo URL.
+      responses:
+        '200':
+          description: A list of voice profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      description: Voice shortname used in TTS requests.
+                      example: zh-CN-XiaoxiaoNeural
+                    name:
+                      type: string
+                      description: Internal voice name identifier.
+                      example: Xiaoxiao
+                    displayName:
+                      type: string
+                      description: Friendly formatted name showing gender.
+                      example: Xiaoxiao (Standard Female)
+                    gender:
+                      type: string
+                      enum: [Female, Male]
+                      example: Female
+                    region:
+                      type: string
+                      example: Mainland China
+                    demoText:
+                      type: string
+                      description: A1 level introductory text in Chinese.
+                      example: 你好，我是晓晓。今天天气很好，你想去公园吗？
+                    demoUrl:
+                      type: string
+                      description: Relative API path to play/stream this voice's A1 speech.
+                      example: /api/tts?text=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%88%91%E6%98%AF%E6%99%AF%E5%A5%87%E3%80%82...&voice=zh-CN-XiaoxiaoNeural
+
+  /api/tts:
+    get:
+      summary: Synthesize Chinese text to speech
+      description: >
+        Accepts Chinese text and voice parameters, returns a high-quality MP3 audio stream.
+        Utilizes caching on both the server-side filesystem and client-side browser headers.
+      parameters:
+        - name: text
+          in: query
+          description: The Chinese characters, phrases, or sentences to synthesize.
+          required: true
+          schema:
+            type: string
+            maxLength: 500
+          example: 麦当劳
+        - name: voice
+          in: query
+          description: The neural voice profile shortname (e.g., standard, regional accents).
+          required: false
+          schema:
+            type: string
+            default: zh-CN-XiaoxiaoNeural
+            enum:
+              - zh-CN-XiaoxiaoNeural
+              - zh-CN-YunxiNeural
+              - zh-CN-YunjianNeural
+              - zh-CN-XiaoyiNeural
+              - zh-CN-YunxiaNeural
+              - zh-CN-YunyangNeural
+              - zh-CN-liaoning-XiaobeiNeural
+              - zh-CN-shaanxi-XiaoniNeural
+          example: zh-CN-XiaoxiaoNeural
+        - name: rate
+          in: query
+          description: Speaking rate percentage change (e.g., speed control).
+          required: false
+          schema:
+            type: string
+            default: '+0%'
+            pattern: '^[+-]\d+%$'
+          example: '+10%'
+        - name: pitch
+          in: query
+          description: Voice pitch modification in Hz (e.g., tone pitch adjustment).
+          required: false
+          schema:
+            type: string
+            default: '+0Hz'
+            pattern: '^[+-]\d+Hz$'
+          example: '+0Hz'
+        - name: volume
+          in: query
+          description: Volume modification percentage.
+          required: false
+          schema:
+            type: string
+            default: '+0%'
+          example: '+0%'
+      responses:
+        '200':
+          description: Audio stream generated/retrieved successfully
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: audio/mpeg
+              description: Standard MP3 audio MIME type.
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=31536000, immutable
+              description: Caching directives allowing browsers and CDNs to cache the audio file for 1 year.
+            X-Cache-Status:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+                example: HIT
+              description: Indicates if the file was served from server-side cache (HIT) or synthesized in real-time (MISS).
+            X-Cache-Filename:
+              schema:
+                type: string
+                example: '%E9%BA%A6%E5%BD%93%E5%8A%B3_c48cda3051f8.mp3'
+              description: URL-encoded filename of the cached resource.
+            X-Response-Time-Ms:
+              schema:
+                type: string
+                example: '386'
+              description: Response synthesis time in milliseconds (only sent on cache MISS).
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid request parameters (e.g. missing text parameter)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Text query parameter is required
+        '500':
+          description: Speech synthesis or filesystem error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Failed to synthesize audio
+
+  /api/stream-audio:
+    get:
+      summary: Synthesize Chinese text to speech (Alias)
+      description: Alias of `/api/tts` for backward compatibility.
+      parameters:
+        - $ref: '#/components/parameters/text'
+        - $ref: '#/components/parameters/voice'
+        - $ref: '#/components/parameters/rate'
+        - $ref: '#/components/parameters/pitch'
+        - $ref: '#/components/parameters/volume'
+      responses:
+        '200':
+          $ref: '#/components/responses/audioSuccess'
+        '400':
+          $ref: '#/components/responses/badRequest'
+        '500':
+          $ref: '#/components/responses/serverError'
+
+components:
+  parameters:
+    text:
+      name: text
+      in: query
+      required: true
+      schema:
+        type: string
+    voice:
+      name: voice
+      in: query
+      schema:
+        type: string
+    rate:
+      name: rate
+      in: query
+      schema:
+        type: string
+    pitch:
+      name: pitch
+      in: query
+      schema:
+        type: string
+    volume:
+      name: volume
+      in: query
+      schema:
+        type: string
+  responses:
+    audioSuccess:
+      description: Audio stream generated/retrieved successfully
+      headers:
+        Content-Type:
+          schema:
+            type: string
+        Cache-Control:
+          schema:
+            type: string
+        X-Cache-Status:
+          schema:
+            type: string
+        X-Cache-Filename:
+          schema:
+            type: string
+        X-Response-Time-Ms:
+          schema:
+            type: string
+      content:
+        audio/mpeg:
+          schema:
+            type: string
+            format: binary
+    badRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    serverError:
+      description: Synthesis error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

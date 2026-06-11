@@ -1,0 +1,14 @@
+services:
+    tts-api:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: chinese-tts-api
+        ports:
+            - "3003:3000"
+        volumes:
+            - ./audio-cache:/app/audio-cache
+        environment:
+            - PORT=3000
+            - NODE_ENV=production
+        restart: unless-stopped
