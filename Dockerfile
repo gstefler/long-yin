@@ -7,7 +7,9 @@ RUN bun install --frozen-lockfile
 COPY src ./src
 COPY tsconfig.json ./
 
-RUN bun build src/index.ts --compile --outfile server
+RUN bun build src/index.ts --compile \
+    --define 'process.env.NODE_ENV="production"' \
+    --outfile server
 
 FROM alpine:3.20 AS runner
 WORKDIR /app
