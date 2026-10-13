@@ -6,10 +6,10 @@
   },
   "dependencies": {
     "edge-tts-universal": "^1.4.0",
-    "hono": "^4.12.25"
+    "hono": "^4.13.13"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^25.9.3"
+    "@types/node": "^25.9.9"
   }
 }
