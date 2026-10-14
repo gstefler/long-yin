@@ -11,5 +11,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^25.9.9"
+  },
+  "patchedDependencies": {
+    "edge-tts-universal@1.4.0": "patches/edge-tts-universal@1.4.0.patch"
   }
 }

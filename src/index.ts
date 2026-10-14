@@ -23,7 +23,7 @@ app.use(
   '*',
   cors({
     origin: '*',
-    allowMethods: ['GET', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['Content-Type'],
     exposeHeaders: [
       'X-Cache-Status',
@@ -51,4 +51,11 @@ app.all('*', (c) => {
   );
 });
 
-export default app;
+// Bun closes a connection after 10 s without traffic by default — shorter than a cache
+// miss whose synthesis needs a retry or two (see TtsService), which then reached the
+// caller as an empty reply. 60 s covers the worst retry path.
+export default {
+  port: PORT,
+  fetch: app.fetch,
+  idleTimeout: 60,
+};

@@ -17,7 +17,13 @@ export class TtsController {
 
     try {
       const filename = await cacheService.getCacheFilename(text, voice, rate, pitch, volume);
-      const isCached = cacheService.has(filename);
+      let isCached = cacheService.has(filename);
+      // Being synthesized right now (usually by a precache): wait for it, not Microsoft.
+      const inProgress = isCached ? undefined : cacheService.pendingFor(filename);
+      if (inProgress) {
+        await inProgress.catch(() => {});
+        isCached = cacheService.has(filename);
+      }
       const filePath = cacheService.getFilePath(filename);
 
       // Cache HIT
@@ -43,10 +49,14 @@ export class TtsController {
 
       // Cache MISS
       const start = performance.now();
-      const arrayBuffer = await ttsService.synthesize(text, voice, rate, pitch, volume);
-      
-      // Save locally to cache folder asynchronously
-      await cacheService.save(filename, arrayBuffer);
+      const arrayBuffer = await cacheService.track(
+        filename,
+        (async () => {
+          const audio = await ttsService.synthesize(text, voice, rate, pitch, volume);
+          await cacheService.save(filename, audio);
+          return audio;
+        })()
+      );
       
       const latency = Math.round(performance.now() - start);
 

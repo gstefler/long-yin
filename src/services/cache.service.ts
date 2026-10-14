@@ -4,6 +4,13 @@ import { CACHE_DIR, MAX_CACHE_SIZE_MB, TARGET_CACHE_SIZE_MB } from '../config/co
 import { CacheStats } from '../types';
 
 export class CacheService {
+  /**
+   * Syntheses in progress, by cache filename. A line being precached is often requested
+   * by playback moments later; waiting for it costs nothing, synthesizing it again costs
+   * another Microsoft handshake.
+   */
+  private pending = new Map<string, Promise<unknown>>();
+
   constructor() {
     this.ensureCacheDirectoryExists();
   }
@@ -45,6 +52,21 @@ export class CacheService {
   public has(filename: string): boolean {
     const filePath = join(CACHE_DIR, filename);
     return existsSync(filePath);
+  }
+
+  /** The in-progress synthesis of `filename`, if any. */
+  public pendingFor(filename: string): Promise<unknown> | undefined {
+    return this.pending.get(filename);
+  }
+
+  /** Registers `work` as the in-progress synthesis of `filename` until it settles. */
+  public track<T>(filename: string, work: Promise<T>): Promise<T> {
+    this.pending.set(filename, work);
+    const clear = () => {
+      if (this.pending.get(filename) === work) this.pending.delete(filename);
+    };
+    work.then(clear, clear);
+    return work;
   }
 
   /**

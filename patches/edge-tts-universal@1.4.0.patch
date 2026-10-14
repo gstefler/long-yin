@@ -1,0 +1,42 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 2b01b22c9a5d394d5a4c956d9cd83469d05c1c5b..8a41258005cc14011a2a3365d13059c4edf1d2da 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -468,7 +468,15 @@ var Communicate = class {
+       messageQueue.push("close");
+       if (resolveMessage) resolveMessage();
+     });
+-    await new Promise((resolve) => websocket.on("open", resolve));
++    // Patched (long-yin): a refused handshake (Microsoft intermittently answers 403)
++    // emits error + close but never "open", so upstream awaited here forever and the
++    // caller hung. Reject with the queued handshake error instead, so it can be retried.
++    await new Promise((resolve, reject) => {
++      websocket.once("open", resolve);
++      websocket.once("close", () => {
++        reject(messageQueue.find((m) => m instanceof Error) ?? new WebSocketError("WebSocket closed before opening"));
++      });
++    });
+     websocket.send(
+       `X-Timestamp:${dateToString()}\r
+ Content-Type:application/json; charset=utf-8\r
+diff --git a/dist/index.js b/dist/index.js
+index 57650af17b7c3a513c2e770dde9ede5168a9fce6..79d0c1facc5c158a8e6364a2dad46e4e98219f88 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -460,7 +460,15 @@ var Communicate = class {
+       messageQueue.push("close");
+       if (resolveMessage) resolveMessage();
+     });
+-    await new Promise((resolve) => websocket.on("open", resolve));
++    // Patched (long-yin): a refused handshake (Microsoft intermittently answers 403)
++    // emits error + close but never "open", so upstream awaited here forever and the
++    // caller hung. Reject with the queued handshake error instead, so it can be retried.
++    await new Promise((resolve, reject) => {
++      websocket.once("open", resolve);
++      websocket.once("close", () => {
++        reject(messageQueue.find((m) => m instanceof Error) ?? new WebSocketError("WebSocket closed before opening"));
++      });
++    });
+     websocket.send(
+       `X-Timestamp:${dateToString()}\r
+ Content-Type:application/json; charset=utf-8\r

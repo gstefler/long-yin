@@ -2,6 +2,8 @@ FROM oven/bun:1.3-alpine AS builder
 WORKDIR /app
 
 COPY package.json bun.lock ./
+# The edge-tts-universal fix (bun patch) is applied during install, so it must be here first.
+COPY patches ./patches
 RUN bun install --frozen-lockfile
 
 COPY src ./src

@@ -110,6 +110,28 @@ X-Cache-Filename: %E9%BA%A6%E5%BD%93%E5%8A%B3_c48cda3051f8.mp3
 
 ---
 
+### 4. Precache a Batch (`POST /api/tts/precache`)
+Makes sure a list of texts is in the audio cache, synthesizing only what is missing — over **one reused connection to Microsoft**, so a whole dialogue costs a single handshake instead of one per line. Items take the same parameters as `GET /api/tts` and produce the same cache keys, so later playback is a `HIT`.
+```bash
+curl -X POST http://localhost:3000/api/tts/precache -H 'content-type: application/json' \
+  -d '{"items":[{"text":"你好，我叫高博。"},{"text":"你好，我是王老师。","voice":"zh-CN-YunjianNeural"}]}'
+# → {"total":2,"cached":0,"synthesized":2,"failed":0}
+```
+
+---
+
+## 🛡️ Reliability: Microsoft's Handshake Refusals
+
+Microsoft's Edge read-aloud endpoint intermittently refuses the websocket handshake with an HTTP 403 — about a third of connections at a trickle and over half after a burst (October 2026). Once a socket is open, synthesis succeeds. The service copes in three ways:
+
+- **Patched library** (`patches/`, applied by `bun install`): unpatched, `edge-tts-universal` waited forever for a refused socket to open, so the request hung until something timed it out.
+- **Retries** with exponential backoff (up to 6 attempts) for single syntheses, plus connect and per-attempt timeouts.
+- **Connection reuse** in the precache route, which pays for one handshake per batch.
+
+Requests that may wait on retries are covered by a 60 s server idle timeout (Bun's default is 10 s).
+
+---
+
 ## ⚙️ Configuration & Cache Eviction
 
 The service maintains a self-cleaning local cache directory. Eviction runs **asynchronously in the background** when a new file is saved, ensuring zero request latency overhead.
