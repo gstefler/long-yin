@@ -1,4 +1,5 @@
 import { Communicate } from 'edge-tts-universal';
+import { azureSpeech } from './azure-speech';
 import { retryDelayMs, sleep } from './backoff';
 
 /**
@@ -15,7 +16,8 @@ const ATTEMPT_TIMEOUT_MS = 15_000;
 
 export class TtsService {
   /**
-   * Invokes Edge TTS to synthesize text into an audio ArrayBuffer, retrying failed
+   * Synthesizes text into an MP3 ArrayBuffer — through Azure AI Speech when it is
+   * configured, otherwise through Edge TTS, retrying failed
    * attempts. The read-aloud endpoint intermittently refuses the websocket handshake
    * (HTTP 403, a third to over half of connections in October 2026) while the next attempt usually
    * succeeds. The library's own 403 retry never fires for websocket handshakes, and
@@ -28,6 +30,7 @@ export class TtsService {
     pitch: string,
     volume: string
   ): Promise<ArrayBuffer> {
+    if (azureSpeech) return azureSpeech.synthesize({ text, voice, rate, pitch, volume }, 'playback');
     let lastError: unknown;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {

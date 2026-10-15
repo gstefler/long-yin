@@ -11,4 +11,7 @@ services:
         environment:
             - PORT=3000
             - NODE_ENV=production
+            - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY:-}
+            - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION:-}
+            - AZURE_SPEECH_RPM=${AZURE_SPEECH_RPM:-20}
         restart: unless-stopped

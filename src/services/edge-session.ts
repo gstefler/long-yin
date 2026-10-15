@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { retryDelayMs, sleep } from './backoff';
+import { escapeXml } from './ssml';
 
 // One Edge read-aloud websocket reused for many syntheses — what makes the precache
 // route cheap. Microsoft refuses a share of websocket *handshakes* (HTTP 403), but once
@@ -51,17 +52,7 @@ function secMsGec(): string {
     .toUpperCase();
 }
 
-function escapeXml(text: string): string {
-  return text
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/** Callers validate voice/rate/pitch/volume (see precache.service); text is escaped here. */
+/** Callers validate voice/rate/pitch/volume (see parseTtsParams); text is escaped here. */
 function ssml(r: SynthesisRequest): string {
   return (
     "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>" +

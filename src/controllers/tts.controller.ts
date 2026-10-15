@@ -1,24 +1,26 @@
 import { Context } from 'hono';
 import { cacheService } from '../services/cache.service';
 import { ttsService } from '../services/tts.service';
-import { DEFAULT_TTS_CONFIG, NODE_ENV } from '../config/constants';
+import { NODE_ENV } from '../config/constants';
+import { parseTtsParams, TtsValidationError } from '../services/ssml';
 
 export class TtsController {
   public async handleTts(c: Context) {
-    const text = c.req.query('text');
-    const voice = c.req.query('voice') || DEFAULT_TTS_CONFIG.voice;
-    const rate = c.req.query('rate') || DEFAULT_TTS_CONFIG.rate;
-    const pitch = c.req.query('pitch') || DEFAULT_TTS_CONFIG.pitch;
-    const volume = c.req.query('volume') || DEFAULT_TTS_CONFIG.volume;
-
-    if (!text) {
-      return c.json({ error: 'Text query parameter is required' }, 400);
+    let params;
+    try {
+      // Same validation and defaults as the precache route, so their cache keys agree —
+      // and the values are safe to put into SSML.
+      params = parseTtsParams(c.req.query());
+    } catch (error) {
+      if (error instanceof TtsValidationError) return c.json({ error: error.message }, 400);
+      throw error;
     }
+    const { text, voice, rate, pitch, volume } = params;
 
     try {
       const filename = await cacheService.getCacheFilename(text, voice, rate, pitch, volume);
       let isCached = cacheService.has(filename);
-      // Being synthesized right now (usually by a precache): wait for it, not Microsoft.
+      // Being synthesized right now (usually by a precache): wait for it, not the provider.
       const inProgress = isCached ? undefined : cacheService.pendingFor(filename);
       if (inProgress) {
         await inProgress.catch(() => {});

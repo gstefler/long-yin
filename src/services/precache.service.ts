@@ -1,16 +1,11 @@
-import { DEFAULT_TTS_CONFIG } from '../config/constants';
 import { TtsRequestParams } from '../types';
+import { azureSpeech } from './azure-speech';
 import { cacheService } from './cache.service';
 import { EdgeSession } from './edge-session';
+import { parseTtsParams, TtsValidationError } from './ssml';
 
 /** A dialogue is at most 60 lines in the app; leave headroom without inviting abuse. */
 export const MAX_PRECACHE_ITEMS = 100;
-const MAX_TEXT_LENGTH = 500;
-
-// These go into SSML attributes verbatim, so only well-formed values get through.
-const VOICE = /^[a-z]{2,3}-[A-Z]{2}(-[a-z]+)?-[A-Za-z]+Neural$/;
-const PERCENT = /^[+-]\d{1,3}%$/;
-const HERTZ = /^[+-]\d{1,3}Hz$/;
 
 export class PrecacheValidationError extends Error {}
 
@@ -31,34 +26,22 @@ export function parsePrecacheItems(body: unknown): TtsRequestParams[] {
     throw new PrecacheValidationError(`at most ${MAX_PRECACHE_ITEMS} items`);
   }
   return items.map((raw, i) => {
-    const item = (raw ?? {}) as Record<string, unknown>;
-    const text = typeof item.text === 'string' ? item.text.trim() : '';
-    if (!text || text.length > MAX_TEXT_LENGTH) {
-      throw new PrecacheValidationError(`item ${i}: text must be 1-${MAX_TEXT_LENGTH} characters`);
+    try {
+      return parseTtsParams((raw ?? {}) as Record<string, unknown>);
+    } catch (error) {
+      if (error instanceof TtsValidationError) throw new PrecacheValidationError(`item ${i}: ${error.message}`);
+      throw error;
     }
-    const field = (name: string, fallback: string, pattern: RegExp) => {
-      const value = item[name] === undefined || item[name] === '' ? fallback : item[name];
-      if (typeof value !== 'string' || !pattern.test(value)) {
-        throw new PrecacheValidationError(`item ${i}: invalid ${name}`);
-      }
-      return value;
-    };
-    return {
-      text,
-      voice: field('voice', DEFAULT_TTS_CONFIG.voice, VOICE),
-      rate: field('rate', DEFAULT_TTS_CONFIG.rate, PERCENT),
-      pitch: field('pitch', DEFAULT_TTS_CONFIG.pitch, HERTZ),
-      volume: field('volume', DEFAULT_TTS_CONFIG.volume, PERCENT),
-    };
   });
 }
 
 /**
- * Makes sure every item is in the audio cache, synthesizing only what is missing — all
- * of it over one reused Edge connection (see EdgeSession), so a whole dialogue costs a
- * single handshake. Cache keys are exactly the GET /api/tts route's, so later playback
- * of these lines is a HIT. A dropped socket is reopened and the batch carries on; an
- * item that fails is counted and skipped — playback will simply synthesize it then.
+ * Makes sure every item is in the audio cache, synthesizing only what is missing — on
+ * Azure when configured, else all of it over one reused Edge connection (see
+ * EdgeSession), so a whole dialogue costs a single handshake. Cache keys are exactly
+ * the GET /api/tts route's, so later playback of these lines is a HIT. A dropped socket
+ * is reopened and the batch carries on; an item that fails is counted and skipped —
+ * playback will simply synthesize it then.
  */
 export async function precache(items: TtsRequestParams[]): Promise<PrecacheSummary> {
   const summary: PrecacheSummary = { total: items.length, cached: 0, synthesized: 0, failed: 0 };
@@ -77,6 +60,7 @@ export async function precache(items: TtsRequestParams[]): Promise<PrecacheSumma
     else todo.push({ item, filename });
   }
   if (todo.length === 0) return summary;
+  if (azureSpeech) return precacheViaAzure(todo, summary);
 
   const session = new EdgeSession();
   try {
@@ -112,6 +96,33 @@ export async function precache(items: TtsRequestParams[]): Promise<PrecacheSumma
     }
   } finally {
     session.close();
+  }
+  return summary;
+}
+
+/**
+ * Azure has no handshake to save, only a request budget (20 a minute on the free tier):
+ * one line at a time in the limiter's precache lane, so playback keeps priority.
+ */
+async function precacheViaAzure(
+  todo: { item: TtsRequestParams; filename: string }[],
+  summary: PrecacheSummary
+): Promise<PrecacheSummary> {
+  for (const { item, filename } of todo) {
+    if (cacheService.has(filename) || cacheService.pendingFor(filename)) {
+      summary.cached++;
+      continue;
+    }
+    try {
+      await cacheService.track(
+        filename,
+        azureSpeech!.synthesize(item, 'precache').then((audio) => cacheService.save(filename, audio))
+      );
+      summary.synthesized++;
+    } catch (error) {
+      summary.failed++;
+      console.warn(`[Precache] ${item.voice} "${item.text.slice(0, 20)}" failed: ${(error as Error).message}`);
+    }
   }
   return summary;
 }

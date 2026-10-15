@@ -4,7 +4,8 @@ import { cors } from 'hono/cors';
 import healthRouter from './routes/health.routes';
 import ttsRouter from './routes/tts.routes';
 import voiceRouter from './routes/voice.routes';
-import { PORT, NODE_ENV, CACHE_DIR, MAX_CACHE_SIZE_MB, TARGET_CACHE_SIZE_MB } from './config/constants';
+import { PORT, NODE_ENV, CACHE_DIR, MAX_CACHE_SIZE_MB, TARGET_CACHE_SIZE_MB, AZURE_SPEECH_REGION, AZURE_SPEECH_RPM } from './config/constants';
+import { azureSpeech } from './services/azure-speech';
 
 console.log('=========================================');
 console.log('🐉 龙吟 Lóng Yín | Chinese Neural TTS API');
@@ -14,6 +15,9 @@ console.log(`- Environment:        ${NODE_ENV}`);
 console.log(`- Cache Directory:    ${CACHE_DIR}`);
 console.log(`- Max Cache Size:     ${MAX_CACHE_SIZE_MB} MB`);
 console.log(`- Target Cache Size:  ${TARGET_CACHE_SIZE_MB} MB`);
+console.log(
+  `- Speech Provider:    ${azureSpeech ? `Azure (${AZURE_SPEECH_REGION}, ${AZURE_SPEECH_RPM}/min)` : 'Edge read-aloud'}`
+);
 console.log('=========================================');
 
 const app = new Hono();
