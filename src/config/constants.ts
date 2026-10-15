@@ -14,3 +14,12 @@ export const DEFAULT_TTS_CONFIG = {
   pitch: '+0Hz',
   volume: '+0%',
 } as const;
+
+/**
+ * Azure AI Speech (the official, keyed API). With both set, every synthesis goes there
+ * instead of the free Edge read-aloud endpoint — same voices, so cache keys don't change.
+ */
+export const AZURE_SPEECH_KEY = process.env.AZURE_SPEECH_KEY || '';
+export const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION || '';
+/** Syntheses allowed per 60 s. The free F0 tier's fixed limit is 20; S0 allows 30 per second. */
+export const AZURE_SPEECH_RPM = Number(process.env.AZURE_SPEECH_RPM) || 20;

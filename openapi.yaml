@@ -33,6 +33,11 @@ paths:
                     type: number
                     description: Server uptime in seconds
                     example: 13.007
+                  provider:
+                    type: string
+                    enum: [azure, edge]
+                    description: Which speech backend synthesizes cache misses (azure when AZURE_SPEECH_KEY and AZURE_SPEECH_REGION are set)
+                    example: azure
                   cache:
                     type: object
                     properties:
@@ -188,7 +193,7 @@ paths:
                 type: string
                 format: binary
         '400':
-          description: Invalid request parameters (e.g. missing text parameter)
+          description: Invalid request parameters (missing or over-long text, malformed voice, rate, pitch or volume)
           content:
             application/json:
               schema:
@@ -196,7 +201,7 @@ paths:
                 properties:
                   error:
                     type: string
-                    example: Text query parameter is required
+                    example: text must be 1-500 characters
         '500':
           description: Speech synthesis or filesystem error
           content:

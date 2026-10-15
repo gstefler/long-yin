@@ -1,6 +1,6 @@
 # 🐉 龙吟 Lóng Yín | Neural Chinese TTS API
 
-A lightweight, high-performance Chinese Text-to-Speech (TTS) microservice built with **Bun** and **Hono**. It wraps Microsoft Edge's Neural TTS system to generate natural-sounding Mandarin speech, featuring robust dual-layer caching for ultra-low latency.
+A lightweight, high-performance Chinese Text-to-Speech (TTS) microservice built with **Bun** and **Hono**. It generates natural-sounding Mandarin speech with Microsoft's neural voices — through the official **Azure AI Speech** API when a key is configured, otherwise through Microsoft Edge's free read-aloud endpoint — featuring robust dual-layer caching for ultra-low latency.
 
 Designed to run as a backend microservice (e.g., inside an internal network behind a proxy) or direct integration in client-side applications (Vue, React, Svelte, etc.).
 
@@ -91,7 +91,7 @@ curl http://localhost:3000/api/voices
 Generates speech audio from Chinese text.
 
 **Parameters:**
-- `text` (String, Required): Chinese characters/sentences to synthesize (max 500 chars).
+- `text` (String, Required): Chinese characters/sentences to synthesize (max 500 chars, trimmed).
 - `voice` (String, Optional): Voice ID (default: `zh-CN-XiaoxiaoNeural`).
 - `rate` (String, Optional): Speed variation (e.g. `+10%`, `-15%`).
 - `pitch` (String, Optional): Pitch variation (e.g. `+5Hz`, `-10Hz`).
@@ -111,7 +111,7 @@ X-Cache-Filename: %E9%BA%A6%E5%BD%93%E5%8A%B3_c48cda3051f8.mp3
 ---
 
 ### 4. Precache a Batch (`POST /api/tts/precache`)
-Makes sure a list of texts is in the audio cache, synthesizing only what is missing — over **one reused connection to Microsoft**, so a whole dialogue costs a single handshake instead of one per line. Items take the same parameters as `GET /api/tts` and produce the same cache keys, so later playback is a `HIT`.
+Makes sure a list of texts is in the audio cache, synthesizing only what is missing — on Edge over **one reused connection to Microsoft**, so a whole dialogue costs a single handshake instead of one per line; on Azure one request per line, paced by the rate limiter. Items take the same parameters as `GET /api/tts` and produce the same cache keys, so later playback is a `HIT`.
 ```bash
 curl -X POST http://localhost:3000/api/tts/precache -H 'content-type: application/json' \
   -d '{"items":[{"text":"你好，我叫高博。"},{"text":"你好，我是王老师。","voice":"zh-CN-YunjianNeural"}]}'
@@ -120,7 +120,19 @@ curl -X POST http://localhost:3000/api/tts/precache -H 'content-type: applicatio
 
 ---
 
-## 🛡️ Reliability: Microsoft's Handshake Refusals
+## 🔑 Speech Provider: Azure AI Speech or Edge
+
+Set `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` and every cache miss is synthesized by **Azure AI Speech**, the keyed and documented API behind the same `zh-CN-*Neural` voices. Voice ids, `rate`/`pitch`/`volume` and the MP3 format are unchanged, so cache keys stay the same and an existing cache keeps serving. Leave them unset and the service uses the Edge read-aloud endpoint as before (see the next section). `GET /health` reports which one is active as `provider`.
+
+**Setting it up:** in the Azure portal create a **Speech** resource (Azure AI services), pick a region (e.g. `westeurope`) and the **Free F0** tier, then copy **KEY 1** and the **Location/Region** from *Keys and Endpoint*.
+
+**Free tier limits** (October 2026): 0.5 million billable characters a month, and **20 syntheses per 60 seconds**. Azure bills each hanzi as **two** characters, plus any SSML markup other than `<speak>`/`<voice>` — so a neutral `<prosody>` is left out of the request. Over the monthly allowance F0 answers 429 until the month resets; S0 costs about $15 per million characters and allows 30 syntheses per second (set `AZURE_SPEECH_RPM` to match).
+
+**Rate limiting:** syntheses go through an in-process sliding-window limiter sized by `AZURE_SPEECH_RPM`. Precache items queue behind playback and never take the last quarter of the window, so a play tap isn't stuck behind a dialogue's batch; on the free tier a 60-line dialogue precaches in about four minutes. Throttling (429) and server errors are retried, honouring `Retry-After`; a bad key or an unknown voice fails at once.
+
+---
+
+## 🛡️ Reliability: Microsoft's Handshake Refusals (Edge only)
 
 Microsoft's Edge read-aloud endpoint intermittently refuses the websocket handshake with an HTTP 403 — about a third of connections at a trickle and over half after a burst (October 2026). Once a socket is open, synthesis succeeds. The service copes in three ways:
 
@@ -146,6 +158,9 @@ You can configure the service using the following environment variables (which c
 | `NODE_ENV` | Environment mode (`development` or `production`). In `development` mode, requests to `/api/tts` print beautified telemetry JSON logs to the console. | `development` |
 | `MAX_CACHE_SIZE_MB` | The absolute maximum size limit for the local cache directory before triggering eviction. | `500` |
 | `TARGET_CACHE_SIZE_MB` | The target size the cache folder is shrunk to during eviction. | `350` |
+| `AZURE_SPEECH_KEY` | Azure AI Speech resource key. With the region set, switches synthesis from Edge to Azure. | *(unset)* |
+| `AZURE_SPEECH_REGION` | The Speech resource's region, e.g. `westeurope`. | *(unset)* |
+| `AZURE_SPEECH_RPM` | Syntheses allowed per 60 s. F0's fixed limit is 20. | `20` |
 
 ### Cache Eviction Mechanism (LRU)
 1. When a cache `MISS` occurs and a new MP3 is saved, the service checks the folder size.
