@@ -9,6 +9,14 @@ export const MAX_PRECACHE_ITEMS = 100;
 
 export class PrecacheValidationError extends Error {}
 
+/**
+ * Lines a running batch has taken on but not reached yet. Playback ignores this (it
+ * would rather synthesize a line now than wait its turn in someone's batch), but a
+ * second batch skips them — two people opening the same dialogue, or one sending it
+ * twice, must not open a second Edge connection for the same lines.
+ */
+const claimed = new Set<string>();
+
 export interface PrecacheSummary {
   total: number;
   cached: number;
@@ -42,26 +50,44 @@ export function parsePrecacheItems(body: unknown): TtsRequestParams[] {
  * the GET /api/tts route's, so later playback of these lines is a HIT. A dropped socket
  * is reopened and the batch carries on; an item that fails is counted and skipped —
  * playback will simply synthesize it then.
+ *
+ * Repeating a batch is free: every line is a cache hit, or claimed by the batch still
+ * working on it, so no connection is opened and nothing is synthesized or rate-limited.
  */
 export async function precache(items: TtsRequestParams[]): Promise<PrecacheSummary> {
   const summary: PrecacheSummary = { total: items.length, cached: 0, synthesized: 0, failed: 0 };
 
-  // Distinct and not yet cached (or already on its way via another request).
+  // Distinct and not yet cached (or already on its way via another request or batch).
+  // Claimed as the scan finds them, not after it: the scan awaits a hash per line, and
+  // an identical batch scanning alongside would otherwise take the same lines.
   const todo: { item: TtsRequestParams; filename: string }[] = [];
   const seen = new Set<string>();
-  for (const item of items) {
-    const filename = await cacheService.getCacheFilename(item.text, item.voice, item.rate, item.pitch, item.volume);
-    if (seen.has(filename)) {
-      summary.cached++;
-      continue;
+  try {
+    for (const item of items) {
+      const filename = await cacheService.getCacheFilename(item.text, item.voice, item.rate, item.pitch, item.volume);
+      if (seen.has(filename)) {
+        summary.cached++;
+        continue;
+      }
+      seen.add(filename);
+      if (cacheService.has(filename) || cacheService.pendingFor(filename) || claimed.has(filename)) {
+        summary.cached++;
+      } else {
+        claimed.add(filename);
+        todo.push({ item, filename });
+      }
     }
-    seen.add(filename);
-    if (cacheService.has(filename) || cacheService.pendingFor(filename)) summary.cached++;
-    else todo.push({ item, filename });
+    if (todo.length === 0) return summary;
+    return await (azureSpeech ? precacheViaAzure(todo, summary) : precacheViaEdge(todo, summary));
+  } finally {
+    for (const { filename } of todo) claimed.delete(filename);
   }
-  if (todo.length === 0) return summary;
-  if (azureSpeech) return precacheViaAzure(todo, summary);
+}
 
+async function precacheViaEdge(
+  todo: { item: TtsRequestParams; filename: string }[],
+  summary: PrecacheSummary
+): Promise<PrecacheSummary> {
   const session = new EdgeSession();
   try {
     for (let i = 0; i < todo.length; i++) {
