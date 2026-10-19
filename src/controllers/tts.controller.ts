@@ -30,6 +30,8 @@ export class TtsController {
 
       // Cache HIT
       if (isCached) {
+        cacheService.activity.record('hit');
+        cacheService.touch(filename);
         const file = Bun.file(filePath);
         this.logDevRequest({
           text,
@@ -51,15 +53,21 @@ export class TtsController {
 
       // Cache MISS
       const start = performance.now();
-      const arrayBuffer = await cacheService.track(
-        filename,
-        (async () => {
-          const audio = await ttsService.synthesize(text, voice, rate, pitch, volume);
-          await cacheService.save(filename, audio);
-          return audio;
-        })()
-      );
-      
+      const arrayBuffer = await cacheService
+        .track(
+          filename,
+          (async () => {
+            const audio = await ttsService.synthesize(text, voice, rate, pitch, volume);
+            await cacheService.save(filename, audio, { voice, rate, pitch, volume });
+            return audio;
+          })()
+        )
+        .catch((error) => {
+          cacheService.activity.record('failed');
+          throw error;
+        });
+      cacheService.activity.record('miss');
+
       const latency = Math.round(performance.now() - start);
 
       this.logDevRequest({

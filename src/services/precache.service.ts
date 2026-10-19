@@ -16,6 +16,8 @@ export interface PrecacheSummary {
   failed: number;
 }
 
+const metaOf = ({ voice, rate, pitch, volume }: TtsRequestParams) => ({ voice, rate, pitch, volume });
+
 /** Validates the request body into synthesis params, filling the GET route's defaults. */
 export function parsePrecacheItems(body: unknown): TtsRequestParams[] {
   const items = (body as { items?: unknown } | null)?.items;
@@ -78,6 +80,7 @@ export async function precache(items: TtsRequestParams[]): Promise<PrecacheSumma
           // Every handshake was refused: Microsoft won't take one right now, and the rest
           // would fail the same way. Playback synthesizes them later instead.
           summary.failed += todo.length - i;
+          for (let j = i; j < todo.length; j++) cacheService.activity.record('failed');
           console.warn(`[Precache] giving up on ${todo.length - i} items: ${(error as Error).message}`);
           break;
         }
@@ -85,12 +88,14 @@ export async function precache(items: TtsRequestParams[]): Promise<PrecacheSumma
       try {
         await cacheService.track(
           filename,
-          session.synthesize(item).then((audio) => cacheService.save(filename, audio))
+          session.synthesize(item).then((audio) => cacheService.save(filename, audio, metaOf(item)))
         );
         summary.synthesized++;
+        cacheService.activity.record('precached');
       } catch (error) {
         // Usually a dropped socket; the next item reopens it.
         summary.failed++;
+        cacheService.activity.record('failed');
         console.warn(`[Precache] ${item.voice} "${item.text.slice(0, 20)}" failed: ${(error as Error).message}`);
       }
     }
@@ -116,11 +121,13 @@ async function precacheViaAzure(
     try {
       await cacheService.track(
         filename,
-        azureSpeech!.synthesize(item, 'precache').then((audio) => cacheService.save(filename, audio))
+        azureSpeech!.synthesize(item, 'precache').then((audio) => cacheService.save(filename, audio, metaOf(item)))
       );
       summary.synthesized++;
+      cacheService.activity.record('precached');
     } catch (error) {
       summary.failed++;
+      cacheService.activity.record('failed');
       console.warn(`[Precache] ${item.voice} "${item.text.slice(0, 20)}" failed: ${(error as Error).message}`);
     }
   }

@@ -34,6 +34,17 @@ export class RateLimiter {
     });
   }
 
+  /** Requests in the current window and waiting for a slot, for the cache status. */
+  snapshot(): { limit: number; windowSeconds: number; used: number; queued: number } {
+    const since = this.now() - this.windowMs;
+    return {
+      limit: this.limit,
+      windowSeconds: Math.round(this.windowMs / 1000),
+      used: this.stamps.filter((t) => t > since).length,
+      queued: this.queue.length,
+    };
+  }
+
   private capacity(priority: Priority): number {
     return priority === 'playback' ? this.limit : Math.max(1, this.limit - this.reserve);
   }
