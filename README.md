@@ -117,6 +117,7 @@ curl -X POST http://localhost:3000/api/tts/precache -H 'content-type: applicatio
   -d '{"items":[{"text":"你好，我叫高博。"},{"text":"你好，我是王老师。","voice":"zh-CN-YunjianNeural"}]}'
 # → {"total":2,"cached":0,"synthesized":2,"failed":0}
 ```
+Sending the same batch again is free: every item comes back as `cached`, with no connection opened, nothing synthesized and nothing taken from the rate limit. That holds even while the first batch is still running — a line it has taken on but not reached yet is skipped by the second batch rather than synthesized twice.
 
 ### 5. Cache Status (`GET /api/cache/status`)
 How full the audio cache is, what is in it and how playback has fared — the data behind 中文通's admin cache panel. Aggregates only: no texts or filenames are returned.
