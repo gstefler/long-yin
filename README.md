@@ -14,7 +14,7 @@ Designed to run as a backend microservice (e.g., inside an internal network behi
   - **Server-Side**: Saves synthesized audio locally in a hashed file cache to avoid redundant platform API calls.
   - **Client-Side (Browser)**: Appends strict `Cache-Control: public, max-age=31536000, immutable` headers so browsers cache audio files locally for 0ms repeat playback latency.
 - 🌐 **CORS Ready**: Configured with wildcards and exposed cache headers (`X-Cache-Status`, `X-Response-Time-Ms`) for simple frontend fetches.
-- 🩺 **Self-Monitoring**: `/health` check route reporting cache sizes, file counts, and uptime.
+- 🩺 **Self-Monitoring**: `/health` check route reporting cache sizes, file counts, and uptime, plus `/api/cache/status` for a fuller picture of the cache (by voice, by last use, hit rate).
 - 🐳 **Dockerized**: Multi-stage Docker builds compiled into a minimal standalone Alpine image (~95MB).
 
 ---
@@ -118,6 +118,17 @@ curl -X POST http://localhost:3000/api/tts/precache -H 'content-type: applicatio
 # → {"total":2,"cached":0,"synthesized":2,"failed":0}
 ```
 
+### 5. Cache Status (`GET /api/cache/status`)
+How full the audio cache is, what is in it and how playback has fared — the data behind 中文通's admin cache panel. Aggregates only: no texts or filenames are returned.
+```bash
+curl http://localhost:3000/api/cache/status
+```
+- `disk` — files, bytes, and the eviction limits (`maxBytes`, `targetBytes`).
+- `lastUsed` — files and bytes played or written within 1, 7 and 30 days, and older.
+- `voices` — files and bytes per voice, biggest first. Voices are recorded in `audio-cache/.index.json` as files are saved; files cached before that are listed last with `voice: null`.
+- `activity` — since the process started: `hits`, `misses` (synthesized for playback), `precached` and `failed`, in total and for each of the last 24 hours. In memory, so a restart starts counting again.
+- `inFlight`, `evictions` (since start) and, on Azure, `rateLimit` (requests used in the current window, and queued).
+
 ---
 
 ## 🔑 Speech Provider: Azure AI Speech or Edge
@@ -164,6 +175,6 @@ You can configure the service using the following environment variables (which c
 
 ### Cache Eviction Mechanism (LRU)
 1. When a cache `MISS` occurs and a new MP3 is saved, the service checks the folder size.
-2. If the folder size exceeds `MAX_CACHE_SIZE_MB`, files are sorted by their modification time (`mtime`), oldest first.
+2. If the folder size exceeds `MAX_CACHE_SIZE_MB`, files are sorted by their modification time (`mtime`), oldest first. Every `HIT` touches its file's `mtime`, so this is the least recently *played* order, not the order files were written in.
 3. Files are deleted one by one until the total cache directory size falls below `TARGET_CACHE_SIZE_MB`.
 

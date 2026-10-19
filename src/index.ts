@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
+import cacheRouter from './routes/cache.routes';
 import healthRouter from './routes/health.routes';
 import ttsRouter from './routes/tts.routes';
 import voiceRouter from './routes/voice.routes';
@@ -42,6 +43,7 @@ app.use(
 // Route Bindings
 app.route('/health', healthRouter);
 app.route('/api/voices', voiceRouter);
+app.route('/api/cache', cacheRouter);
 app.route('/api/tts', ttsRouter);
 app.route('/api', ttsRouter); // Supports legacy /api/stream-audio
 
@@ -49,7 +51,7 @@ app.route('/api', ttsRouter); // Supports legacy /api/stream-audio
 app.all('*', (c) => {
   return c.json(
     {
-      error: 'Endpoint not found. Exposing /health, /api/voices, and /api/tts',
+      error: 'Endpoint not found. Exposing /health, /api/voices, /api/tts and /api/cache/status',
     },
     404
   );

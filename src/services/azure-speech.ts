@@ -31,7 +31,7 @@ export class AzureSpeech {
   constructor(
     private readonly key: string,
     private readonly region: string,
-    private readonly limiter: RateLimiter,
+    readonly limiter: RateLimiter,
     private readonly fetchImpl: typeof fetch = fetch
   ) {}
 

@@ -257,6 +257,82 @@ paths:
         '400':
           description: Invalid batch (missing items, bad text length, malformed voice/prosody)
 
+  /api/cache/status:
+    get:
+      summary: Audio cache status
+      description: >
+        How full the audio cache is, what is in it (by voice, by last use) and how playback
+        has fared since the process started. Aggregates only: no texts or filenames.
+      responses:
+        '200':
+          description: Cache status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  provider: { type: string, enum: [azure, edge] }
+                  uptimeSeconds: { type: integer, example: 7200 }
+                  disk:
+                    type: object
+                    properties:
+                      files: { type: integer, example: 1834 }
+                      bytes: { type: integer, example: 41943040 }
+                      maxBytes: { type: integer, description: Eviction starts above this, example: 524288000 }
+                      targetBytes: { type: integer, description: Eviction shrinks the cache to this, example: 367001600 }
+                      oldestUsedAt: { type: string, format: date-time, nullable: true }
+                      newestUsedAt: { type: string, format: date-time, nullable: true }
+                  lastUsed:
+                    type: array
+                    description: Files played or written within 1, 7 and 30 days, then older (withinDays null)
+                    items:
+                      type: object
+                      properties:
+                        withinDays: { type: integer, nullable: true, example: 7 }
+                        files: { type: integer }
+                        bytes: { type: integer }
+                  voices:
+                    type: array
+                    description: Biggest first; voice null for files cached before voices were recorded, always last
+                    items:
+                      type: object
+                      properties:
+                        voice: { type: string, nullable: true, example: zh-CN-XiaoxiaoNeural }
+                        files: { type: integer }
+                        bytes: { type: integer }
+                  activity:
+                    type: object
+                    properties:
+                      since: { type: string, format: date-time }
+                      totals: { $ref: '#/components/schemas/ActivityCounts' }
+                      hourly:
+                        type: array
+                        description: The last 24 hours, oldest first
+                        items:
+                          allOf:
+                            - $ref: '#/components/schemas/ActivityCounts'
+                            - type: object
+                              properties:
+                                hour: { type: string, format: date-time }
+                  inFlight: { type: integer, description: Syntheses running right now }
+                  evictions:
+                    type: object
+                    properties:
+                      runs: { type: integer }
+                      files: { type: integer }
+                      bytes: { type: integer }
+                      lastAt: { type: string, format: date-time, nullable: true }
+                  rateLimit:
+                    type: object
+                    nullable: true
+                    description: Azure only
+                    properties:
+                      limit: { type: integer, example: 20 }
+                      windowSeconds: { type: integer, example: 60 }
+                      used: { type: integer }
+                      queued: { type: integer }
+
   /api/stream-audio:
     get:
       summary: Synthesize Chinese text to speech (Alias)
@@ -276,6 +352,14 @@ paths:
           $ref: '#/components/responses/serverError'
 
 components:
+  schemas:
+    ActivityCounts:
+      type: object
+      properties:
+        hits: { type: integer, description: Served from the cache }
+        misses: { type: integer, description: Synthesized for playback }
+        precached: { type: integer, description: Synthesized by a precache batch }
+        failed: { type: integer, description: Syntheses that failed }
   parameters:
     text:
       name: text
